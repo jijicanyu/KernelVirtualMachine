@@ -43,7 +43,7 @@
 #include "trace.h"
 #include "exec/ram_addr.h"
 #include "qemu/rcu_queue.h"
-
+#include <stdio.h>
 #ifdef DEBUG_MIGRATION_RAM
 #define DPRINTF(fmt, ...) \
     do { fprintf(stdout, "migration_ram: " fmt, ## __VA_ARGS__); } while (0)
@@ -342,6 +342,7 @@ void migrate_compress_threads_join(void)
 {
     int i, thread_count;
 
+    printf("inside ram.c -> migrate_compress_threads_join");
     if (!migrate_use_compression()) {
         return;
     }
@@ -365,6 +366,7 @@ void migrate_compress_threads_create(void)
 {
     int i, thread_count;
 
+    printf("inside ram.c -> migrate_compress_threads_create");
     if (!migrate_use_compression()) {
         return;
     }
@@ -407,7 +409,7 @@ static size_t save_page_header(QEMUFile *f, RAMBlock *block, ram_addr_t offset)
 
     qemu_put_be64(f, offset);
     size = 8;
-
+    printf("inside ram.c -> save_page_header");
     if (!(offset & RAM_SAVE_FLAG_CONTINUE)) {
         len = strlen(block->idstr);
         qemu_put_byte(f, len);
@@ -481,6 +483,7 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
     int encoded_len = 0, bytes_xbzrle;
     uint8_t *prev_cached_page;
 
+    printf("inside ram.c -> save_xbzrle_page");
     if (!cache_is_cached(XBZRLE.cache, current_addr, bitmap_sync_count)) {
         acct_info.xbzrle_cache_miss++;
         if (!last_stage) {
@@ -700,6 +703,7 @@ static int save_zero_page(QEMUFile *f, RAMBlock *block, ram_addr_t offset,
 {
     int pages = -1;
 
+    printf("inside ram.c -> save_zero_page");
     if (is_zero_range(p, TARGET_PAGE_SIZE)) {
         acct_info.dup_pages++;
         *bytes_transferred += save_page_header(f, block,
@@ -738,6 +742,7 @@ static int ram_save_page(QEMUFile *f, PageSearchStatus *pss,
     RAMBlock *block = pss->block;
     ram_addr_t offset = pss->offset;
 
+    printf("inside ram.c -> ram_save_page");
     p = block->host + offset;
 
     /* In doubt sent page as normal */
@@ -915,6 +920,7 @@ static int ram_save_compressed_page(QEMUFile *f, PageSearchStatus *pss,
     RAMBlock *block = pss->block;
     ram_addr_t offset = pss->offset;
 
+    printf("inside ram.c -> ram_save_compressed_page");
     p = block->host + offset;
 
     ret = ram_control_save_page(f, block->offset,
@@ -1160,6 +1166,7 @@ int ram_save_queue_pages(MigrationState *ms, const char *rbname,
 {
     RAMBlock *ramblock;
 
+    printf("inside ram.c -> ram_save_queue_pages");
     ms->postcopy_requests++;
     rcu_read_lock();
     if (!rbname) {
@@ -1232,6 +1239,7 @@ static int ram_save_target_page(MigrationState *ms, QEMUFile *f,
 {
     int res = 0;
 
+    printf("inside ram.c -> ram_save_target_page");
     /* Check the pages is dirty and if it is send it */
     if (migration_bitmap_clear_dirty(dirty_ram_abs)) {
         unsigned long *unsentmap;
@@ -1286,6 +1294,7 @@ static int ram_save_host_page(MigrationState *ms, QEMUFile *f,
                               uint64_t *bytes_transferred,
                               ram_addr_t dirty_ram_abs)
 {
+    printf("Inside ram.c -> ram_save_host_page");
     int tmppages, pages = 0;
     do {
         tmppages = ram_save_target_page(ms, f, pss, last_stage,
@@ -1330,6 +1339,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     ram_addr_t dirty_ram_abs; /* Address of the start of the dirty page in
                                  ram_addr_t space */
 
+    printf("Inside ram.c -> ram_find_and_save_block");
     pss.block = last_seen_block;
     pss.offset = last_offset;
     pss.complete_round = false;
@@ -1536,6 +1546,7 @@ static int postcopy_send_discard_bm_ram(MigrationState *ms,
     unsigned long current;
     unsigned long *unsentmap;
 
+    printf("Inside ram.c -> postcopy_send_discard_bm_ram");
     unsentmap = atomic_rcu_read(&migration_bitmap_rcu)->unsentmap;
     for (current = start; current < end; ) {
         unsigned long one = find_next_bit(unsentmap, end, current);
@@ -1574,6 +1585,7 @@ static int postcopy_each_ram_send_discard(MigrationState *ms)
     struct RAMBlock *block;
     int ret;
 
+    printf("Inside ram.c -> postcopy_ieach_ram_send_discard");
     QLIST_FOREACH_RCU(block, &ram_list.blocks, next) {
         unsigned long first = block->offset >> TARGET_PAGE_BITS;
         PostcopyDiscardState *pds = postcopy_discard_send_init(ms,
@@ -1775,6 +1787,7 @@ int ram_postcopy_send_discard_bitmap(MigrationState *ms)
     int ret;
     unsigned long *bitmap, *unsentmap;
 
+    printf("Inside ram.c -> ram_postcopy_send_discard_bitmap");
     rcu_read_lock();
 
     /* This should be our last sync, the src is now paused */
@@ -1880,6 +1893,7 @@ static int ram_save_setup(QEMUFile *f, void *opaque)
     RAMBlock *block;
     int64_t ram_bitmap_pages; /* Size of bitmap in pages, including gaps */
 
+    printf("Inside ram.c -> ram_save_setup");
     dirty_rate_high_cnt = 0;
     bitmap_sync_count = 0;
     migration_bitmap_sync_init();
@@ -1969,6 +1983,7 @@ static int ram_save_iterate(QEMUFile *f, void *opaque)
     int64_t t0;
     int pages_sent = 0;
 
+    printf("Inside ram.c -> ram_save_iterate");
     rcu_read_lock();
     if (ram_list.version != last_version) {
         reset_ram_globals();
@@ -2032,6 +2047,7 @@ static int ram_save_complete(QEMUFile *f, void *opaque)
 {
     rcu_read_lock();
 
+    printf("Inside ram.c -> ram_save_complete");
     if (!migration_in_postcopy(migrate_get_current())) {
         migration_bitmap_sync();
     }
@@ -2334,6 +2350,7 @@ static int ram_load_postcopy(QEMUFile *f)
     void *last_host = NULL;
     bool all_zero = false;
 
+    printf("Inside ram.c -> ram_load_postcopy");
     while (!ret && !(flags & RAM_SAVE_FLAG_EOS)) {
         ram_addr_t addr;
         void *host = NULL;
@@ -2452,6 +2469,7 @@ static int ram_load(QEMUFile *f, void *opaque, int version_id)
      */
     bool postcopy_running = postcopy_state_get() >= POSTCOPY_INCOMING_LISTENING;
 
+    printf("Inside ram.c -> ram_load");
     seq_iter++;
 
     if (version_id != 4) {
