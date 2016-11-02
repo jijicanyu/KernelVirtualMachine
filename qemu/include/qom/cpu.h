@@ -27,7 +27,6 @@
 #include "qemu/bitmap.h"
 #include "qemu/queue.h"
 #include "qemu/thread.h"
-#include "trace/generated-events.h"
 
 typedef int (*WriteCoreDumpFunction)(const void *buf, size_t size,
                                      void *opaque);
@@ -232,7 +231,25 @@ struct kvm_run;
 #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
 
 /* work queue */
-typedef void (*run_on_cpu_func)(CPUState *cpu, void *data);
+
+/* The union type allows passing of 64 bit target pointers on 32 bit
+ * hosts in a single parameter
+ */
+typedef union {
+    int           host_int;
+    unsigned long host_ulong;
+    void         *host_ptr;
+    vaddr         target_ptr;
+} run_on_cpu_data;
+
+#define RUN_ON_CPU_HOST_PTR(p)    ((run_on_cpu_data){.host_ptr = (p)})
+#define RUN_ON_CPU_HOST_INT(i)    ((run_on_cpu_data){.host_int = (i)})
+#define RUN_ON_CPU_HOST_ULONG(ul) ((run_on_cpu_data){.host_ulong = (ul)})
+#define RUN_ON_CPU_TARGET_PTR(v)  ((run_on_cpu_data){.target_ptr = (v)})
+#define RUN_ON_CPU_NULL           RUN_ON_CPU_HOST_PTR(NULL)
+
+typedef void (*run_on_cpu_func)(CPUState *cpu, run_on_cpu_data data);
+
 struct qemu_work_item;
 
 /**
@@ -320,7 +337,10 @@ struct CPUState {
     MemoryRegion *memory;
 
     void *env_ptr; /* CPUArchState */
+
+    /* Writes protected by tb_lock, reads not thread-safe  */
     struct TranslationBlock *tb_jmp_cache[TB_JMP_CACHE_SIZE];
+
     struct GDBRegisterState *gdb_regs;
     int gdb_num_regs;
     int gdb_num_g_regs;
@@ -345,8 +365,12 @@ struct CPUState {
     struct KVMState *kvm_state;
     struct kvm_run *kvm_run;
 
-    /* Used for events with 'vcpu' and *without* the 'disabled' properties */
-    DECLARE_BITMAP(trace_dstate, TRACE_VCPU_EVENT_COUNT);
+    /*
+     * Used for events with 'vcpu' and *without* the 'disabled' properties.
+     * Dynamically allocated based on bitmap requried to hold up to
+     * trace_get_vcpu_event_count() entries.
+     */
+    unsigned long *trace_dstate;
 
     /* TODO Move common fields from CPUArchState here. */
     int cpu_index; /* used by alpha TCG */
@@ -631,7 +655,7 @@ bool cpu_is_stopped(CPUState *cpu);
  *
  * Used internally in the implementation of run_on_cpu.
  */
-void do_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data,
+void do_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data,
                    QemuMutex *mutex);
 
 /**
@@ -642,7 +666,7 @@ void do_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data,
  *
  * Schedules the function @func for execution on the vCPU @cpu.
  */
-void run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
+void run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data);
 
 /**
  * async_run_on_cpu:
@@ -652,7 +676,7 @@ void run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
  *
  * Schedules the function @func for execution on the vCPU @cpu asynchronously.
  */
-void async_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
+void async_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data);
 
 /**
  * async_safe_run_on_cpu:
@@ -666,7 +690,7 @@ void async_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
  * Unlike run_on_cpu and async_run_on_cpu, the function is run outside the
  * BQL.
  */
-void async_safe_run_on_cpu(CPUState *cpu, run_on_cpu_func func, void *data);
+void async_safe_run_on_cpu(CPUState *cpu, run_on_cpu_func func, run_on_cpu_data data);
 
 /**
  * qemu_get_cpu:
@@ -943,7 +967,9 @@ AddressSpace *cpu_get_address_space(CPUState *cpu, int asidx);
 
 void QEMU_NORETURN cpu_abort(CPUState *cpu, const char *fmt, ...)
     GCC_FMT_ATTR(2, 3);
-void cpu_exec_exit(CPUState *cpu);
+void cpu_exec_initfn(CPUState *cpu);
+void cpu_exec_realizefn(CPUState *cpu, Error **errp);
+void cpu_exec_unrealizefn(CPUState *cpu);
 
 #ifdef CONFIG_SOFTMMU
 extern const struct VMStateDescription vmstate_cpu_common;

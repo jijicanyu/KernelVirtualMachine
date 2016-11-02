@@ -59,7 +59,6 @@
 #include "qapi/qmp/json-streamer.h"
 #include "qapi/qmp/json-parser.h"
 #include "qom/object_interfaces.h"
-#include "cpu.h"
 #include "trace.h"
 #include "trace/control.h"
 #include "monitor/hmp-target.h"
@@ -76,16 +75,9 @@
 #include "qapi/qmp-event.h"
 #include "qapi-event.h"
 #include "qmp-introspect.h"
-#include "sysemu/block-backend.h"
 #include "sysemu/qtest.h"
 #include "qemu/cutils.h"
 #include "qapi/qmp/dispatch.h"
-
-/* for hmp_info_irq/pic */
-#if defined(TARGET_SPARC)
-#include "hw/sparc/sun4m.h"
-#endif
-#include "hw/lm32/lm32_pic.h"
 
 #if defined(TARGET_S390X)
 #include "hw/s390x/storage-keys.h"
@@ -192,7 +184,7 @@ typedef struct {
 } MonitorQAPIEventConf;
 
 struct Monitor {
-    CharDriverState *chr;
+    CharBackend chr;
     int reset_seen;
     int flags;
     int suspend_cnt;
@@ -303,7 +295,7 @@ static void monitor_flush_locked(Monitor *mon)
     len = qstring_get_length(mon->outbuf);
 
     if (len && !mon->mux_out) {
-        rc = qemu_chr_fe_write(mon->chr, (const uint8_t *) buf, len);
+        rc = qemu_chr_fe_write(&mon->chr, (const uint8_t *) buf, len);
         if ((rc < 0 && errno != EAGAIN) || (rc == len)) {
             /* all flushed or error */
             QDECREF(mon->outbuf);
@@ -317,8 +309,9 @@ static void monitor_flush_locked(Monitor *mon)
             mon->outbuf = tmp;
         }
         if (mon->out_watch == 0) {
-            mon->out_watch = qemu_chr_fe_add_watch(mon->chr, G_IO_OUT|G_IO_HUP,
-                                                   monitor_unblocked, mon);
+            mon->out_watch =
+                qemu_chr_fe_add_watch(&mon->chr, G_IO_OUT | G_IO_HUP,
+                                      monitor_unblocked, mon);
         }
     }
 }
@@ -587,9 +580,7 @@ static void monitor_data_init(Monitor *mon)
 
 static void monitor_data_destroy(Monitor *mon)
 {
-    if (mon->chr) {
-        qemu_chr_add_handlers(mon->chr, NULL, NULL, NULL, NULL);
-    }
+    qemu_chr_fe_deinit(&mon->chr);
     if (monitor_is_qmp(mon)) {
         json_message_parser_destroy(&mon->qmp.parser);
     }
@@ -957,7 +948,7 @@ EventInfoList *qmp_query_events(Error **errp)
  * directly into QObject instead of first parsing it with
  * visit_type_SchemaInfoList() into a SchemaInfoList, then marshal it
  * to QObject with generated output marshallers, every time.  Instead,
- * we do it in test-qmp-input-visitor.c, just to make sure
+ * we do it in test-qobject-input-visitor.c, just to make sure
  * qapi-introspect.py's output actually conforms to the schema.
  */
 static void qmp_query_qmp_schema(QDict *qdict, QObject **ret_data,
@@ -991,6 +982,15 @@ static void qmp_unregister_commands_hack(void)
 #endif
 #ifndef TARGET_ARM
     qmp_unregister_command("query-gic-capabilities");
+#endif
+#if !defined(TARGET_S390X)
+    qmp_unregister_command("query-cpu-model-expansion");
+    qmp_unregister_command("query-cpu-model-baseline");
+    qmp_unregister_command("query-cpu-model-comparison");
+#endif
+#if !defined(TARGET_PPC) && !defined(TARGET_ARM) && !defined(TARGET_I386) \
+    && !defined(TARGET_S390X)
+    qmp_unregister_command("query-cpu-definitions");
 #endif
 }
 
@@ -1742,7 +1742,7 @@ void qmp_getfd(const char *fdname, Error **errp)
     mon_fd_t *monfd;
     int fd;
 
-    fd = qemu_chr_fe_get_msgfd(cur_mon->chr);
+    fd = qemu_chr_fe_get_msgfd(&cur_mon->chr);
     if (fd == -1) {
         error_setg(errp, QERR_FD_NOT_SUPPLIED);
         return;
@@ -1867,7 +1867,7 @@ AddfdInfo *qmp_add_fd(bool has_fdset_id, int64_t fdset_id, bool has_opaque,
     Monitor *mon = cur_mon;
     AddfdInfo *fdinfo;
 
-    fd = qemu_chr_fe_get_msgfd(mon->chr);
+    fd = qemu_chr_fe_get_msgfd(&mon->chr);
     if (fd == -1) {
         error_setg(errp, QERR_FD_NOT_SUPPLIED);
         goto error;
@@ -3327,13 +3327,14 @@ void info_trace_events_completion(ReadLineState *rs, int nb_args, const char *st
     len = strlen(str);
     readline_set_completion_index(rs, len);
     if (nb_args == 2) {
-        TraceEventID id;
-        for (id = 0; id < trace_event_count(); id++) {
-            const char *event_name = trace_event_get_name(trace_event_id(id));
-            if (!strncmp(str, event_name, len)) {
-                readline_add_completion(rs, event_name);
-            }
+        TraceEventIter iter;
+        TraceEvent *ev;
+        char *pattern = g_strdup_printf("%s*", str);
+        trace_event_iter_init(&iter, pattern);
+        while ((ev = trace_event_iter_next(&iter)) != NULL) {
+            readline_add_completion(rs, trace_event_get_name(ev));
         }
+        g_free(pattern);
     }
 }
 
@@ -3344,13 +3345,14 @@ void trace_event_completion(ReadLineState *rs, int nb_args, const char *str)
     len = strlen(str);
     readline_set_completion_index(rs, len);
     if (nb_args == 2) {
-        TraceEventID id;
-        for (id = 0; id < trace_event_count(); id++) {
-            const char *event_name = trace_event_get_name(trace_event_id(id));
-            if (!strncmp(str, event_name, len)) {
-                readline_add_completion(rs, event_name);
-            }
+        TraceEventIter iter;
+        TraceEvent *ev;
+        char *pattern = g_strdup_printf("%s*", str);
+        trace_event_iter_init(&iter, pattern);
+        while ((ev = trace_event_iter_next(&iter)) != NULL) {
+            readline_add_completion(rs, trace_event_get_name(ev));
         }
+        g_free(pattern);
     } else if (nb_args == 3) {
         add_completion_option(rs, str, "on");
         add_completion_option(rs, str, "off");
@@ -3972,7 +3974,7 @@ void monitor_init(CharDriverState *chr, int flags)
     mon = g_malloc(sizeof(*mon));
     monitor_data_init(mon);
 
-    mon->chr = chr;
+    qemu_chr_fe_init(&mon->chr, chr, &error_abort);
     mon->flags = flags;
     if (flags & MONITOR_USE_READLINE) {
         mon->rs = readline_init(monitor_readline_printf,
@@ -3983,13 +3985,13 @@ void monitor_init(CharDriverState *chr, int flags)
     }
 
     if (monitor_is_qmp(mon)) {
-        qemu_chr_add_handlers(chr, monitor_can_read, monitor_qmp_read,
-                              monitor_qmp_event, mon);
-        qemu_chr_fe_set_echo(chr, true);
+        qemu_chr_fe_set_handlers(&mon->chr, monitor_can_read, monitor_qmp_read,
+                                 monitor_qmp_event, mon, NULL, true);
+        qemu_chr_fe_set_echo(&mon->chr, true);
         json_message_parser_init(&mon->qmp.parser, handle_qmp_command);
     } else {
-        qemu_chr_add_handlers(chr, monitor_can_read, monitor_read,
-                              monitor_event, mon);
+        qemu_chr_fe_set_handlers(&mon->chr, monitor_can_read, monitor_read,
+                                 monitor_event, mon, NULL, true);
     }
 
     qemu_mutex_lock(&monitor_lock);
@@ -4090,7 +4092,7 @@ QemuOptsList qemu_mon_opts = {
             .name = "chardev",
             .type = QEMU_OPT_STRING,
         },{
-            .name = "default",
+            .name = "default",  /* deprecated */
             .type = QEMU_OPT_BOOL,
         },{
             .name = "pretty",

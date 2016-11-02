@@ -31,12 +31,11 @@
 #include "qom/qom-qobject.h"
 #include "qapi/qmp/qerror.h"
 #include "qapi/qmp/qobject.h"
-#include "qapi/qmp-input-visitor.h"
+#include "qapi/qobject-input-visitor.h"
 #include "hw/boards.h"
 #include "qom/object_interfaces.h"
 #include "hw/mem/pc-dimm.h"
 #include "hw/acpi/acpi_dev_interface.h"
-#include "qemu/uuid.h"
 
 NameInfo *qmp_query_name(Error **errp)
 {
@@ -660,7 +659,7 @@ void qmp_add_client(const char *protocol, const char *fdname,
 void qmp_object_add(const char *type, const char *id,
                     bool has_props, QObject *props, Error **errp)
 {
-    const QDict *pdict = NULL;
+    QDict *pdict;
     Visitor *v;
     Object *obj;
 
@@ -670,14 +669,18 @@ void qmp_object_add(const char *type, const char *id,
             error_setg(errp, QERR_INVALID_PARAMETER_TYPE, "props", "dict");
             return;
         }
+        QINCREF(pdict);
+    } else {
+        pdict = qdict_new();
     }
 
-    v = qmp_input_visitor_new(props, true);
+    v = qobject_input_visitor_new(QOBJECT(pdict), true);
     obj = user_creatable_add_type(type, id, pdict, v, errp);
     visit_free(v);
     if (obj) {
         object_unref(obj);
     }
+    QDECREF(pdict);
 }
 
 void qmp_object_del(const char *id, Error **errp)

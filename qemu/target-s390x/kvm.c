@@ -132,6 +132,8 @@ const KVMCapabilityInfo kvm_arch_required_capabilities[] = {
     KVM_CAP_LAST_INFO
 };
 
+static QemuMutex qemu_sigp_mutex;
+
 static int cap_sync_regs;
 static int cap_async_pf;
 static int cap_mem_op;
@@ -286,6 +288,8 @@ int kvm_arch_init(MachineState *ms, KVMState *s)
             cap_ri = 1;
         }
     }
+
+    qemu_mutex_init(&qemu_sigp_mutex);
 
     return 0;
 }
@@ -1603,7 +1607,7 @@ int kvm_s390_cpu_restart(S390CPU *cpu)
 {
     SigpInfo si = {};
 
-    run_on_cpu(CPU(cpu), sigp_restart, &si);
+    run_on_cpu(CPU(cpu), sigp_restart, RUN_ON_CPU_HOST_PTR(&si));
     DPRINTF("DONE: KVM cpu restart: %p\n", &cpu->env);
     return 0;
 }
@@ -1679,31 +1683,31 @@ static int handle_sigp_single_dst(S390CPU *dst_cpu, uint8_t order,
 
     switch (order) {
     case SIGP_START:
-        run_on_cpu(CPU(dst_cpu), sigp_start, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_start, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_STOP:
-        run_on_cpu(CPU(dst_cpu), sigp_stop, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_stop, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_RESTART:
-        run_on_cpu(CPU(dst_cpu), sigp_restart, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_restart, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_STOP_STORE_STATUS:
-        run_on_cpu(CPU(dst_cpu), sigp_stop_and_store_status, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_stop_and_store_status, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_STORE_STATUS_ADDR:
-        run_on_cpu(CPU(dst_cpu), sigp_store_status_at_address, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_store_status_at_address, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_STORE_ADTL_STATUS:
-        run_on_cpu(CPU(dst_cpu), sigp_store_adtl_status, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_store_adtl_status, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_SET_PREFIX:
-        run_on_cpu(CPU(dst_cpu), sigp_set_prefix, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_set_prefix, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_INITIAL_CPU_RESET:
-        run_on_cpu(CPU(dst_cpu), sigp_initial_cpu_reset, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_initial_cpu_reset, RUN_ON_CPU_HOST_PTR(&si));
         break;
     case SIGP_CPU_RESET:
-        run_on_cpu(CPU(dst_cpu), sigp_cpu_reset, &si);
+        run_on_cpu(CPU(dst_cpu), sigp_cpu_reset, RUN_ON_CPU_HOST_PTR(&si));
         break;
     default:
         DPRINTF("KVM: unknown SIGP: 0x%x\n", order);
@@ -1776,6 +1780,11 @@ static int handle_sigp(S390CPU *cpu, struct kvm_run *run, uint8_t ipa1)
     status_reg = &env->regs[r1];
     param = (r1 % 2) ? env->regs[r1] : env->regs[r1 + 1];
 
+    if (qemu_mutex_trylock(&qemu_sigp_mutex)) {
+        ret = SIGP_CC_BUSY;
+        goto out;
+    }
+
     switch (order) {
     case SIGP_SET_ARCH:
         ret = sigp_set_architecture(cpu, param, status_reg);
@@ -1785,7 +1794,9 @@ static int handle_sigp(S390CPU *cpu, struct kvm_run *run, uint8_t ipa1)
         dst_cpu = s390_cpu_addr2state(env->regs[r3]);
         ret = handle_sigp_single_dst(dst_cpu, order, param, status_reg);
     }
+    qemu_mutex_unlock(&qemu_sigp_mutex);
 
+out:
     trace_kvm_sigp_finished(order, CPU(cpu)->cpu_index,
                             dst_cpu ? CPU(dst_cpu)->cpu_index : -1, ret);
 
@@ -1990,7 +2001,7 @@ static void insert_stsi_3_2_2(S390CPU *cpu, __u64 addr, uint8_t ar)
         strcpy((char *)sysib.ext_names[0], "KVMguest");
     }
     /* Insert UUID */
-    memcpy(sysib.vm[0].uuid, qemu_uuid, sizeof(sysib.vm[0].uuid));
+    memcpy(sysib.vm[0].uuid, &qemu_uuid, sizeof(sysib.vm[0].uuid));
 
     s390_cpu_virt_mem_write(cpu, addr, ar, &sysib, sizeof(sysib));
 }

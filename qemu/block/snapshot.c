@@ -27,7 +27,6 @@
 #include "block/block_int.h"
 #include "qapi/error.h"
 #include "qapi/qmp/qerror.h"
-#include <stdio.h>
 
 QemuOptsList internal_snapshot_opts = {
     .name = "snapshot",
@@ -99,7 +98,7 @@ bool bdrv_snapshot_find_by_id_and_name(BlockDriverState *bs,
     QEMUSnapshotInfo *sn_tab, *sn;
     int nb_sns, i;
     bool ret = false;
-    printf("\n\n\n\nInside snapshot.c ->bdrv_snapshot_find_by_id_and_name\n\n\n\n");
+
     assert(id || name);
 
     nb_sns = bdrv_snapshot_list(bs, &sn_tab);
@@ -145,7 +144,6 @@ bool bdrv_snapshot_find_by_id_and_name(BlockDriverState *bs,
 
 int bdrv_can_snapshot(BlockDriverState *bs)
 {
-    printf("\n\n\n\ninside snpashot.c -> bdrv_can_snapshot\n\n\n\n");
     BlockDriver *drv = bs->drv;
     if (!drv || !bdrv_is_inserted(bs) || bdrv_is_read_only(bs)) {
         return 0;
@@ -163,8 +161,7 @@ int bdrv_can_snapshot(BlockDriverState *bs)
 
 int bdrv_snapshot_create(BlockDriverState *bs,
                          QEMUSnapshotInfo *sn_info)
-{   
-    printf("\n\n\n\ninside snpashot.c -> bdrv_snapshot_create\n\n\n\n");
+{
     BlockDriver *drv = bs->drv;
     if (!drv) {
         return -ENOMEDIUM;
@@ -181,7 +178,6 @@ int bdrv_snapshot_create(BlockDriverState *bs,
 int bdrv_snapshot_goto(BlockDriverState *bs,
                        const char *snapshot_id)
 {
-    printf("\n\n\n\nInside snapshot.c -> bdrv_snapshot_goto\n\n\n\n");
     BlockDriver *drv = bs->drv;
     int ret, open_ret;
 
@@ -287,7 +283,6 @@ int bdrv_snapshot_delete_by_id_or_name(BlockDriverState *bs,
 int bdrv_snapshot_list(BlockDriverState *bs,
                        QEMUSnapshotInfo **psn_info)
 {
-    printf("\n\n\n\nInside snapshot.c ->bdrv_snapshot_list\n\n\n\n");
     BlockDriver *drv = bs->drv;
     if (!drv) {
         return -ENOMEDIUM;
@@ -479,7 +474,6 @@ int bdrv_all_create_snapshot(QEMUSnapshotInfo *sn,
                              uint64_t vm_state_size,
                              BlockDriverState **first_bad_bs)
 {
-    printf("\n\n\n\nInside snapshot.c ->bdrv_all_create_snapshot\n\n\n\n");
     int err = 0;
     BlockDriverState *bs;
     BdrvNextIterator it;

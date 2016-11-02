@@ -69,11 +69,9 @@ void spapr_cpu_init(sPAPRMachineState *spapr, PowerPCCPU *cpu, Error **errp)
     }
 
     /* Set NUMA node for the added CPUs  */
-    for (i = 0; i < nb_numa_nodes; i++) {
-        if (test_bit(cs->cpu_index, numa_info[i].node_cpu)) {
+    i = numa_get_node_for_cpu(cs->cpu_index);
+    if (i < nb_numa_nodes) {
             cs->numa_node = i;
-            break;
-        }
     }
 
     xics_cpu_setup(spapr->xics, cpu);
@@ -92,20 +90,20 @@ char *spapr_get_cpu_core_type(const char *model)
     gchar **model_pieces = g_strsplit(model, ",", 2);
 
     core_type = g_strdup_printf("%s-%s", model_pieces[0], TYPE_SPAPR_CPU_CORE);
-    g_strfreev(model_pieces);
 
     /* Check whether it exists or whether we have to look up an alias name */
     if (!object_class_by_name(core_type)) {
         const char *realmodel;
 
         g_free(core_type);
-        realmodel = ppc_cpu_lookup_alias(model);
+        core_type = NULL;
+        realmodel = ppc_cpu_lookup_alias(model_pieces[0]);
         if (realmodel) {
-            return spapr_get_cpu_core_type(realmodel);
+            core_type = spapr_get_cpu_core_type(realmodel);
         }
-        return NULL;
     }
 
+    g_strfreev(model_pieces);
     return core_type;
 }
 
@@ -186,7 +184,7 @@ void spapr_core_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
 
     /*
      * Setup CPU DT entries only for hotplugged CPUs. For boot time or
-     * coldplugged CPUs DT entries are setup in spapr_finalize_fdt().
+     * coldplugged CPUs DT entries are setup in spapr_build_fdt().
      */
     if (dev->hotplugged) {
         fdt = spapr_populate_hotplug_cpu_dt(cs, &fdt_offset, spapr);

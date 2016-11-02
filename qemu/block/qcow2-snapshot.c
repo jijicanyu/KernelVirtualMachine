@@ -29,7 +29,6 @@
 #include "qemu/bswap.h"
 #include "qemu/error-report.h"
 #include "qemu/cutils.h"
-#include <stdio.h>
 
 void qcow2_free_snapshots(BlockDriverState *bs)
 {
@@ -140,7 +139,6 @@ fail:
 /* add at the end of the file a new list of snapshots */
 static int qcow2_write_snapshots(BlockDriverState *bs)
 {
-    printf("\n\n\n\nInside qcow2-snapshot.c ->qcow2_write_snapshots\n\n\n\n");
     BDRVQcow2State *s = bs->opaque;
     QCowSnapshot *sn;
     QCowSnapshotHeader h;
@@ -301,7 +299,6 @@ static int find_snapshot_by_id_and_name(BlockDriverState *bs,
                                         const char *id,
                                         const char *name)
 {
-    printf("\n\n\n\nInside qcow2-snapshot.c ->find_snapshot_by_id_and_name\n\n\n\n");
     BDRVQcow2State *s = bs->opaque;
     int i;
 
@@ -333,7 +330,7 @@ static int find_snapshot_by_id_or_name(BlockDriverState *bs,
                                        const char *id_or_name)
 {
     int ret;
-    printf("\n\n\n\nInside qcow2-snapshot.c ->find_snapshot_by_id_or_name\n\n\n\n");
+
     ret = find_snapshot_by_id_and_name(bs, id_or_name, NULL);
     if (ret >= 0) {
         return ret;
@@ -344,7 +341,6 @@ static int find_snapshot_by_id_or_name(BlockDriverState *bs,
 /* if no id is provided, a new one is constructed */
 int qcow2_snapshot_create(BlockDriverState *bs, QEMUSnapshotInfo *sn_info)
 {
-    printf("\n\n\n\nInside qcow2-snapshot.c ->qcow2_snapshot_create\n\n\n\n");
     BDRVQcow2State *s = bs->opaque;
     QCowSnapshot *new_snapshot_list = NULL;
     QCowSnapshot *old_snapshot_list = NULL;
@@ -468,7 +464,6 @@ fail:
 /* copy the snapshot 'snapshot_name' into the current disk image */
 int qcow2_snapshot_goto(BlockDriverState *bs, const char *snapshot_id)
 {
-    printf("\n\n\n\nInside qcow2-snapshot.c ->qcow2_snapshot_goto\n\n\n\n");
     BDRVQcow2State *s = bs->opaque;
     QCowSnapshot *sn;
     int i, snapshot_index;
@@ -659,7 +654,6 @@ int qcow2_snapshot_delete(BlockDriverState *bs,
 
 int qcow2_snapshot_list(BlockDriverState *bs, QEMUSnapshotInfo **psn_tab)
 {
-    printf("\n\n\n\nInside qcow2-snapshot.c ->qcow2_snapshot_list\n\n\n\n");
     BDRVQcow2State *s = bs->opaque;
     QEMUSnapshotInfo *sn_tab, *sn_info;
     QCowSnapshot *sn;

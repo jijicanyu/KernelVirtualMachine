@@ -43,7 +43,7 @@
 #include "qapi/qmp/types.h"
 #include "qapi-visit.h"
 #include "qapi/qmp/qerror.h"
-#include "qapi/qmp-output-visitor.h"
+#include "qapi/qobject-output-visitor.h"
 #include "qapi/util.h"
 #include "sysemu/sysemu.h"
 #include "block/block_int.h"
@@ -356,20 +356,12 @@ static void extract_common_blockdev_options(QemuOpts *opts, int *bdrv_flags,
     const char **throttling_group, ThrottleConfig *throttle_cfg,
     BlockdevDetectZeroesOptions *detect_zeroes, Error **errp)
 {
-    const char *discard;
     Error *local_error = NULL;
     const char *aio;
 
     if (bdrv_flags) {
         if (qemu_opt_get_bool(opts, "copy-on-read", false)) {
             *bdrv_flags |= BDRV_O_COPY_ON_READ;
-        }
-
-        if ((discard = qemu_opt_get(opts, "discard")) != NULL) {
-            if (bdrv_parse_discard_flags(discard, bdrv_flags) != 0) {
-                error_setg(errp, "Invalid discard option");
-                return;
-            }
         }
 
         if ((aio = qemu_opt_get(opts, "aio")) != NULL) {
@@ -447,15 +439,6 @@ static void extract_common_blockdev_options(QemuOpts *opts, int *bdrv_flags,
                             &local_error);
         if (local_error) {
             error_propagate(errp, local_error);
-            return;
-        }
-
-        if (bdrv_flags &&
-            *detect_zeroes == BLOCKDEV_DETECT_ZEROES_OPTIONS_UNMAP &&
-            !(*bdrv_flags & BDRV_O_UNMAP))
-        {
-            error_setg(errp, "setting detect-zeroes to unmap is not allowed "
-                             "without setting discard operation to unmap");
             return;
         }
     }
@@ -650,34 +633,10 @@ err_no_opts:
     return NULL;
 }
 
-static QemuOptsList qemu_root_bds_opts;
-
 /* Takes the ownership of bs_opts */
 static BlockDriverState *bds_tree_init(QDict *bs_opts, Error **errp)
 {
-    BlockDriverState *bs;
-    QemuOpts *opts;
-    Error *local_error = NULL;
-    BlockdevDetectZeroesOptions detect_zeroes;
     int bdrv_flags = 0;
-
-    opts = qemu_opts_create(&qemu_root_bds_opts, NULL, 1, errp);
-    if (!opts) {
-        goto fail;
-    }
-
-    qemu_opts_absorb_qdict(opts, bs_opts, &local_error);
-    if (local_error) {
-        error_propagate(errp, local_error);
-        goto fail;
-    }
-
-    extract_common_blockdev_options(opts, &bdrv_flags, NULL, NULL,
-                                    &detect_zeroes, &local_error);
-    if (local_error) {
-        error_propagate(errp, local_error);
-        goto fail;
-    }
 
     /* bdrv_open() defaults to the values in bdrv_flags (for compatibility
      * with other callers) rather than what we want as the real defaults.
@@ -690,21 +649,7 @@ static BlockDriverState *bds_tree_init(QDict *bs_opts, Error **errp)
         bdrv_flags |= BDRV_O_INACTIVE;
     }
 
-    bs = bdrv_open(NULL, NULL, bs_opts, bdrv_flags, errp);
-    if (!bs) {
-        goto fail_no_bs_opts;
-    }
-
-    bs->detect_zeroes = detect_zeroes;
-
-fail_no_bs_opts:
-    qemu_opts_del(opts);
-    return bs;
-
-fail:
-    qemu_opts_del(opts);
-    QDECREF(bs_opts);
-    return NULL;
+    return bdrv_open(NULL, NULL, bs_opts, bdrv_flags, errp);
 }
 
 void blockdev_close_all_bdrv_states(void)
@@ -2549,6 +2494,7 @@ void qmp_blockdev_change_medium(bool has_device, const char *device,
     BlockBackend *blk;
     BlockDriverState *medium_bs = NULL;
     int bdrv_flags;
+    bool detect_zeroes;
     int rc;
     QDict *options = NULL;
     Error *err = NULL;
@@ -2588,8 +2534,12 @@ void qmp_blockdev_change_medium(bool has_device, const char *device,
         abort();
     }
 
+    options = qdict_new();
+    detect_zeroes = blk_get_detect_zeroes_from_root_state(blk);
+    qdict_put(options, "detect-zeroes",
+              qstring_from_str(detect_zeroes ? "on" : "off"));
+
     if (has_format) {
-        options = qdict_new();
         qdict_put(options, "driver", qstring_from_str(format));
     }
 
@@ -2614,7 +2564,7 @@ void qmp_blockdev_change_medium(bool has_device, const char *device,
     error_free(err);
     err = NULL;
 
-    qmp_x_blockdev_remove_medium(has_device, device, has_id, id, errp);
+    qmp_x_blockdev_remove_medium(has_device, device, has_id, id, &err);
     if (err) {
         error_propagate(errp, err);
         goto fail;
@@ -2625,8 +2575,6 @@ void qmp_blockdev_change_medium(bool has_device, const char *device,
         error_propagate(errp, err);
         goto fail;
     }
-
-    blk_apply_root_state(blk, medium_bs);
 
     qmp_blockdev_close_tray(has_device, device, has_id, id, errp);
 
@@ -2957,39 +2905,15 @@ out:
     aio_context_release(aio_context);
 }
 
-static void block_job_cb(void *opaque, int ret)
-{
-    /* Note that this function may be executed from another AioContext besides
-     * the QEMU main loop.  If you need to access anything that assumes the
-     * QEMU global mutex, use a BH or introduce a mutex.
-     */
-
-    BlockDriverState *bs = opaque;
-    const char *msg = NULL;
-
-    trace_block_job_cb(bs, bs->job, ret);
-
-    assert(bs->job);
-
-    if (ret < 0) {
-        msg = strerror(-ret);
-    }
-
-    if (block_job_is_cancelled(bs->job)) {
-        block_job_event_cancelled(bs->job);
-    } else {
-        block_job_event_completed(bs->job, msg);
-    }
-}
-
 void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
                       bool has_base, const char *base,
+                      bool has_base_node, const char *base_node,
                       bool has_backing_file, const char *backing_file,
                       bool has_speed, int64_t speed,
                       bool has_on_error, BlockdevOnError on_error,
                       Error **errp)
 {
-    BlockDriverState *bs;
+    BlockDriverState *bs, *iter;
     BlockDriverState *base_bs = NULL;
     AioContext *aio_context;
     Error *local_err = NULL;
@@ -2999,7 +2923,7 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
         on_error = BLOCKDEV_ON_ERROR_REPORT;
     }
 
-    bs = qmp_get_root_bs(device, errp);
+    bs = bdrv_lookup_bs(device, device, errp);
     if (!bs) {
         return;
     }
@@ -3007,7 +2931,9 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
     aio_context = bdrv_get_aio_context(bs);
     aio_context_acquire(aio_context);
 
-    if (bdrv_op_is_blocked(bs, BLOCK_OP_TYPE_STREAM, errp)) {
+    if (has_base && has_base_node) {
+        error_setg(errp, "'base' and 'base-node' cannot be specified "
+                   "at the same time");
         goto out;
     }
 
@@ -3019,6 +2945,27 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
         }
         assert(bdrv_get_aio_context(base_bs) == aio_context);
         base_name = base;
+    }
+
+    if (has_base_node) {
+        base_bs = bdrv_lookup_bs(NULL, base_node, errp);
+        if (!base_bs) {
+            goto out;
+        }
+        if (bs == base_bs || !bdrv_chain_contains(bs, base_bs)) {
+            error_setg(errp, "Node '%s' is not a backing image of '%s'",
+                       base_node, device);
+            goto out;
+        }
+        assert(bdrv_get_aio_context(base_bs) == aio_context);
+        base_name = base_bs->filename;
+    }
+
+    /* Check for op blockers in the whole chain between bs and base */
+    for (iter = bs; iter && iter != base_bs; iter = backing_bs(iter)) {
+        if (bdrv_op_is_blocked(iter, BLOCK_OP_TYPE_STREAM, errp)) {
+            goto out;
+        }
     }
 
     /* if we are streaming the entire chain, the result will have no backing
@@ -3033,7 +2980,7 @@ void qmp_block_stream(bool has_job_id, const char *job_id, const char *device,
     base_name = has_backing_file ? backing_file : base_name;
 
     stream_start(has_job_id ? job_id : NULL, bs, base_bs, base_name,
-                 has_speed ? speed : 0, on_error, block_job_cb, bs, &local_err);
+                 has_speed ? speed : 0, on_error, &local_err);
     if (local_err) {
         error_propagate(errp, local_err);
         goto out;
@@ -3053,6 +3000,7 @@ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
                       Error **errp)
 {
     BlockDriverState *bs;
+    BlockDriverState *iter;
     BlockDriverState *base_bs, *top_bs;
     AioContext *aio_context;
     Error *local_err = NULL;
@@ -3119,8 +3067,10 @@ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
 
     assert(bdrv_get_aio_context(base_bs) == aio_context);
 
-    if (bdrv_op_is_blocked(base_bs, BLOCK_OP_TYPE_COMMIT_TARGET, errp)) {
-        goto out;
+    for (iter = top_bs; iter != backing_bs(base_bs); iter = backing_bs(iter)) {
+        if (bdrv_op_is_blocked(iter, BLOCK_OP_TYPE_COMMIT_TARGET, errp)) {
+            goto out;
+        }
     }
 
     /* Do not allow attempts to commit an image into itself */
@@ -3135,12 +3085,17 @@ void qmp_block_commit(bool has_job_id, const char *job_id, const char *device,
                              " but 'top' is the active layer");
             goto out;
         }
-        commit_active_start(has_job_id ? job_id : NULL, bs, base_bs, speed,
-                            on_error, block_job_cb, bs, &local_err, false);
+        commit_active_start(has_job_id ? job_id : NULL, bs, base_bs,
+                            BLOCK_JOB_DEFAULT, speed, on_error, NULL, NULL,
+                            &local_err, false);
     } else {
+        BlockDriverState *overlay_bs = bdrv_find_overlay(bs, top_bs);
+        if (bdrv_op_is_blocked(overlay_bs, BLOCK_OP_TYPE_COMMIT_TARGET, errp)) {
+            goto out;
+        }
         commit_start(has_job_id ? job_id : NULL, bs, base_bs, top_bs, speed,
-                     on_error, block_job_cb, bs,
-                     has_backing_file ? backing_file : NULL, &local_err);
+                     on_error, has_backing_file ? backing_file : NULL,
+                     &local_err);
     }
     if (local_err != NULL) {
         error_propagate(errp, local_err);
@@ -3260,7 +3215,8 @@ static void do_drive_backup(DriveBackup *backup, BlockJobTxn *txn, Error **errp)
 
     backup_start(backup->job_id, bs, target_bs, backup->speed, backup->sync,
                  bmap, backup->compress, backup->on_source_error,
-                 backup->on_target_error, block_job_cb, bs, txn, &local_err);
+                 backup->on_target_error, BLOCK_JOB_DEFAULT,
+                 NULL, NULL, txn, &local_err);
     bdrv_unref(target_bs);
     if (local_err != NULL) {
         error_propagate(errp, local_err);
@@ -3330,7 +3286,8 @@ void do_blockdev_backup(BlockdevBackup *backup, BlockJobTxn *txn, Error **errp)
     }
     backup_start(backup->job_id, bs, target_bs, backup->speed, backup->sync,
                  NULL, backup->compress, backup->on_source_error,
-                 backup->on_target_error, block_job_cb, bs, txn, &local_err);
+                 backup->on_target_error, BLOCK_JOB_DEFAULT,
+                 NULL, NULL, txn, &local_err);
     if (local_err != NULL) {
         error_propagate(errp, local_err);
     }
@@ -3409,8 +3366,7 @@ static void blockdev_mirror_common(const char *job_id, BlockDriverState *bs,
     mirror_start(job_id, bs, target,
                  has_replaces ? replaces : NULL,
                  speed, granularity, buf_size, sync, backing_mode,
-                 on_source_error, on_target_error, unmap,
-                 block_job_cb, bs, errp);
+                 on_source_error, on_target_error, unmap, errp);
 }
 
 void qmp_drive_mirror(DriveMirror *arg, Error **errp)
@@ -3654,7 +3610,7 @@ void qmp_block_job_cancel(const char *device,
         force = false;
     }
 
-    if (job->user_paused && !force) {
+    if (block_job_user_paused(job) && !force) {
         error_setg(errp, "The block job for device '%s' is currently paused",
                    device);
         goto out;
@@ -3671,13 +3627,12 @@ void qmp_block_job_pause(const char *device, Error **errp)
     AioContext *aio_context;
     BlockJob *job = find_block_job(device, &aio_context, errp);
 
-    if (!job || job->user_paused) {
+    if (!job || block_job_user_paused(job)) {
         return;
     }
 
-    job->user_paused = true;
     trace_qmp_block_job_pause(job);
-    block_job_pause(job);
+    block_job_user_pause(job);
     aio_context_release(aio_context);
 }
 
@@ -3686,14 +3641,13 @@ void qmp_block_job_resume(const char *device, Error **errp)
     AioContext *aio_context;
     BlockJob *job = find_block_job(device, &aio_context, errp);
 
-    if (!job || !job->user_paused) {
+    if (!job || !block_job_user_paused(job)) {
         return;
     }
 
-    job->user_paused = false;
     trace_qmp_block_job_resume(job);
     block_job_iostatus_reset(job);
-    block_job_resume(job);
+    block_job_user_resume(job);
     aio_context_release(aio_context);
 }
 
@@ -3828,24 +3782,9 @@ void qmp_blockdev_add(BlockdevOptions *options, Error **errp)
 {
     BlockDriverState *bs;
     QObject *obj;
-    Visitor *v = qmp_output_visitor_new(&obj);
+    Visitor *v = qobject_output_visitor_new(&obj);
     QDict *qdict;
     Error *local_err = NULL;
-
-    /* TODO Sort it out in raw-posix and drive_new(): Reject aio=native with
-     * cache.direct=false instead of silently switching to aio=threads, except
-     * when called from drive_new().
-     *
-     * For now, simply forbidding the combination for all drivers will do. */
-    if (options->has_aio && options->aio == BLOCKDEV_AIO_OPTIONS_NATIVE) {
-        bool direct = options->has_cache &&
-                      options->cache->has_direct &&
-                      options->cache->direct;
-        if (!direct) {
-            error_setg(errp, "aio=native requires cache.direct=true");
-            goto fail;
-        }
-    }
 
     visit_type_BlockdevOptions(v, NULL, &options, &local_err);
     if (local_err) {
@@ -3982,13 +3921,22 @@ BlockJobInfoList *qmp_query_block_jobs(Error **errp)
     BlockJob *job;
 
     for (job = block_job_next(NULL); job; job = block_job_next(job)) {
-        BlockJobInfoList *elem = g_new0(BlockJobInfoList, 1);
-        AioContext *aio_context = blk_get_aio_context(job->blk);
+        BlockJobInfoList *elem;
+        AioContext *aio_context;
 
+        if (block_job_is_internal(job)) {
+            continue;
+        }
+        elem = g_new0(BlockJobInfoList, 1);
+        aio_context = blk_get_aio_context(job->blk);
         aio_context_acquire(aio_context);
-        elem->value = block_job_query(job);
+        elem->value = block_job_query(job, errp);
         aio_context_release(aio_context);
-
+        if (!elem->value) {
+            g_free(elem);
+            qapi_free_BlockJobInfoList(head);
+            return NULL;
+        }
         *p_next = elem;
         p_next = &elem->next;
     }
@@ -4004,10 +3952,6 @@ QemuOptsList qemu_common_drive_opts = {
             .name = "snapshot",
             .type = QEMU_OPT_BOOL,
             .help = "enable/disable snapshot mode",
-        },{
-            .name = "discard",
-            .type = QEMU_OPT_STRING,
-            .help = "discard operation (ignore/off, unmap/on)",
         },{
             .name = "aio",
             .type = QEMU_OPT_STRING,
@@ -4130,31 +4074,6 @@ QemuOptsList qemu_common_drive_opts = {
             .type = QEMU_OPT_BOOL,
             .help = "whether to account for failed I/O operations "
                     "in the statistics",
-        },
-        { /* end of list */ }
-    },
-};
-
-static QemuOptsList qemu_root_bds_opts = {
-    .name = "root-bds",
-    .head = QTAILQ_HEAD_INITIALIZER(qemu_root_bds_opts.head),
-    .desc = {
-        {
-            .name = "discard",
-            .type = QEMU_OPT_STRING,
-            .help = "discard operation (ignore/off, unmap/on)",
-        },{
-            .name = "aio",
-            .type = QEMU_OPT_STRING,
-            .help = "host AIO implementation (threads, native)",
-        },{
-            .name = "copy-on-read",
-            .type = QEMU_OPT_BOOL,
-            .help = "copy read data from backing file into image file",
-        },{
-            .name = "detect-zeroes",
-            .type = QEMU_OPT_STRING,
-            .help = "try to optimize zero writes (off, on, unmap)",
         },
         { /* end of list */ }
     },

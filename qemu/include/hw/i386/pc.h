@@ -13,7 +13,6 @@
 #include "qemu/bitmap.h"
 #include "sysemu/sysemu.h"
 #include "hw/pci/pci.h"
-#include "hw/boards.h"
 #include "hw/compat.h"
 #include "hw/mem/pc-dimm.h"
 #include "hw/mem/nvdimm.h"
@@ -37,6 +36,7 @@
 /**
  * PCMachineState:
  * @acpi_dev: link to ACPI PM device that performs ACPI hotplug handling
+ * @boot_cpus_le: number of present VCPUs, referenced by 'etc/boot-cpus' fw_cfg
  */
 struct PCMachineState {
     /*< private >*/
@@ -69,6 +69,7 @@ struct PCMachineState {
     bool apic_xrupt_override;
     unsigned apic_id_limit;
     CPUArchIdList *possible_cpus;
+    uint16_t boot_cpus_le;
 
     /* NUMA information: */
     uint64_t numa_nodes;
@@ -181,8 +182,6 @@ qemu_irq *i8259_init(ISABus *bus, qemu_irq parent_irq);
 qemu_irq *kvm_i8259_init(ISABus *bus);
 int pic_read_irq(DeviceState *d);
 int pic_get_output(DeviceState *d);
-void hmp_info_pic(Monitor *mon, const QDict *qdict);
-void hmp_info_irq(Monitor *mon, const QDict *qdict);
 
 /* ioapic.c */
 
@@ -379,6 +378,21 @@ bool e820_get_entry(int, uint32_t, uint64_t *, uint64_t *);
         .driver   = TYPE_X86_CPU,\
         .property = "full-cpuid-auto-level",\
         .value    = "off",\
+    },\
+    {\
+        .driver   = "Opteron_G3" "-" TYPE_X86_CPU,\
+        .property = "family",\
+        .value    = "15",\
+    },\
+    {\
+        .driver   = "Opteron_G3" "-" TYPE_X86_CPU,\
+        .property = "model",\
+        .value    = "6",\
+    },\
+    {\
+        .driver   = "Opteron_G3" "-" TYPE_X86_CPU,\
+        .property = "stepping",\
+        .value    = "1",\
     },
 
 #define PC_COMPAT_2_6 \
