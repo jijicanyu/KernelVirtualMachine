@@ -1,6 +1,6 @@
 tamp
-*.out
-./**/bin/**
+/qemu/**/*.out
+/qemu/**/bin/**
 /qemu/*-softmmu
 /qemu/*-darwin-user
 /qemu/*-linux-user
