@@ -1,8 +1,6 @@
-/qemu/bin/debug/native/xtensaeb-softmmu/qemu-system-xtensaeb
-qemu/bin/
 tamp
-/qemu/**/*.out
-/qemu/**/bin/**
+**/*.out
+**/bin/
 /qemu/*-softmmu
 /qemu/*-darwin-user
 /qemu/*-linux-user
