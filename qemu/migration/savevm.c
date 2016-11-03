@@ -54,7 +54,7 @@
 #include "qemu/cutils.h"
 #include "io/channel-buffer.h"
 #include "io/channel-file.h"
-
+#include <stdio.h>
 #ifndef ETH_P_RARP
 #define ETH_P_RARP 0x8035
 #endif
@@ -111,7 +111,7 @@ static void qemu_announce_self_iter(NICState *nic, void *opaque)
 {
     uint8_t buf[60];
     int len;
-
+    printf("\n\n\n\nInside savevm.c -> qemu_announce_self_iter\n\n\n\n");
     trace_qemu_announce_self_iter(qemu_ether_ntoa(&nic->conf->macaddr));
     len = announce_self_create(buf, nic->conf->macaddr.a);
 
@@ -124,6 +124,7 @@ static void qemu_announce_self_once(void *opaque)
     static int count = SELF_ANNOUNCE_ROUNDS;
     QEMUTimer *timer = *(QEMUTimer **)opaque;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_announce_self_once\n\n\n\n");
     qemu_foreach_nic(qemu_announce_self_iter, NULL);
 
     if (--count) {
@@ -152,6 +153,7 @@ static ssize_t block_writev_buffer(void *opaque, struct iovec *iov, int iovcnt,
     int ret;
     QEMUIOVector qiov;
 
+    printf("\n\n\n\nInside savevm.c -> block_writev_buffer\n\n\n\n");
     qemu_iovec_init_external(&qiov, iov, iovcnt);
     ret = bdrv_writev_vmstate(opaque, &qiov, pos);
     if (ret < 0) {
@@ -285,6 +287,7 @@ static void configuration_pre_save(void *opaque)
     SaveState *state = opaque;
     const char *current_name = MACHINE_GET_CLASS(current_machine)->name;
 
+    printf("\n\n\n\nInside savevm.c -> configuration_pre_save\n\n\n\n");
     state->len = strlen(current_name);
     state->name = current_name;
     state->target_page_bits = TARGET_PAGE_BITS;
@@ -294,6 +297,7 @@ static int configuration_pre_load(void *opaque)
 {
     SaveState *state = opaque;
 
+    printf("\n\n\n\nInside savevm.c -> configuration_pre_load\n\n\n\n");
     /* If there is no target-page-bits subsection it means the source
      * predates the variable-target-page-bits support and is using the
      * minimum possible value for this CPU.
@@ -307,6 +311,7 @@ static int configuration_post_load(void *opaque, int version_id)
     SaveState *state = opaque;
     const char *current_name = MACHINE_GET_CLASS(current_machine)->name;
 
+    printf("\n\n\n\nInside savevm.c -> configuration_post_load\n\n\n\n");
     if (strncmp(state->name, current_name, state->len) != 0) {
         error_report("Machine type received is '%.*s' and local is '%s'",
                      (int) state->len, state->name, current_name);
@@ -369,6 +374,8 @@ static void dump_vmstate_vmsd(FILE *out_file,
 static void dump_vmstate_vmsf(FILE *out_file, const VMStateField *field,
                               int indent)
 {
+ 
+    printf("\n\n\n\nInside savevm.c -> dump_vmstate_vmsf\n\n\n\n");
     fprintf(out_file, "%*s{\n", indent, "");
     indent += 2;
     fprintf(out_file, "%*s\"field\": \"%s\",\n", indent, "", field->name);
@@ -388,6 +395,8 @@ static void dump_vmstate_vmss(FILE *out_file,
                               const VMStateDescription **subsection,
                               int indent)
 {
+
+    printf("\n\n\n\nInside savevm.c -> dump_vmstate_vmss\n\n\n\n");
     if (*subsection != NULL) {
         dump_vmstate_vmsd(out_file, *subsection, indent, true);
     }
@@ -397,6 +406,8 @@ static void dump_vmstate_vmsd(FILE *out_file,
                               const VMStateDescription *vmsd, int indent,
                               bool is_subsection)
 {
+		
+    printf("\n\n\n\nInside savevm.c -> dump_vmstate_vmsd\n\n\n\n");
     if (is_subsection) {
         fprintf(out_file, "%*s{\n", indent, "");
     } else {
@@ -452,6 +463,7 @@ static void dump_machine_type(FILE *out_file)
 {
     MachineClass *mc;
 
+    printf("\n\n\n\nInside savevm.c -> dump_machine_type\n\n\n\n");
     mc = MACHINE_GET_CLASS(current_machine);
 
     fprintf(out_file, "  \"vmschkmachine\": {\n");
@@ -464,6 +476,7 @@ void dump_vmstate_json_to_file(FILE *out_file)
     GSList *list, *elt;
     bool first;
 
+    printf("\n\n\n\nInside savevm.c -> dump_vmstate_json_to_file\n\n\n\n");
     fprintf(out_file, "{\n");
     dump_machine_type(out_file);
 
@@ -505,6 +518,7 @@ static int calculate_new_instance_id(const char *idstr)
     SaveStateEntry *se;
     int instance_id = 0;
 
+    printf("\n\n\n\nInside savevm.c -> calculate_new_instance_id\n\n\n\n");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (strcmp(idstr, se->idstr) == 0
             && instance_id <= se->instance_id) {
@@ -519,6 +533,7 @@ static int calculate_compat_instance_id(const char *idstr)
     SaveStateEntry *se;
     int instance_id = 0;
 
+    printf("\n\n\n\nInside savevm.c -> calculate_compat_instance_id\n\n\n\n");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->compat) {
             continue;
@@ -545,6 +560,7 @@ int register_savevm_live(DeviceState *dev,
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> register_savevm_live\n\n\n\n");
     se = g_new0(SaveStateEntry, 1);
     se->version_id = version_id;
     se->section_id = savevm_state.global_section_id++;
@@ -591,6 +607,8 @@ int register_savevm(DeviceState *dev,
                     LoadStateHandler *load_state,
                     void *opaque)
 {
+
+    printf("\n\n\n\nInside savevm.c -> register_savevm\n\n\n\n");
     SaveVMHandlers *ops = g_new0(SaveVMHandlers, 1);
     ops->save_state = save_state;
     ops->load_state = load_state;
@@ -603,6 +621,7 @@ void unregister_savevm(DeviceState *dev, const char *idstr, void *opaque)
     SaveStateEntry *se, *new_se;
     char id[256] = "";
 
+    printf("\n\n\n\nInside savevm.c -> unregister_savevm\n\n\n\n");
     if (dev) {
         char *path = qdev_get_dev_path(dev);
         if (path) {
@@ -630,6 +649,7 @@ int vmstate_register_with_alias_id(DeviceState *dev, int instance_id,
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> vmstate_register_with_alias_id\n\n\n\n");
     /* If this triggers, alias support can be dropped for the vmsd. */
     assert(alias_id == -1 || required_for_version >= vmsd->minimum_version_id);
 
@@ -672,6 +692,7 @@ void vmstate_unregister(DeviceState *dev, const VMStateDescription *vmsd,
 {
     SaveStateEntry *se, *new_se;
 
+    printf("\n\n\n\nInside savevm.c -> vmstate_unregister\n\n\n\n");
     QTAILQ_FOREACH_SAFE(se, &savevm_state.handlers, entry, new_se) {
         if (se->vmsd == vmsd && se->opaque == opaque) {
             QTAILQ_REMOVE(&savevm_state.handlers, se, entry);
@@ -683,6 +704,8 @@ void vmstate_unregister(DeviceState *dev, const VMStateDescription *vmsd,
 
 static int vmstate_load(QEMUFile *f, SaveStateEntry *se, int version_id)
 {
+
+    printf("\n\n\n\nInside savevm.c -> vmstate_load\n\n\n\n");
     trace_vmstate_load(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
     if (!se->vmsd) {         /* Old style */
         return se->ops->load_state(f, se->opaque, version_id);
@@ -694,6 +717,7 @@ static void vmstate_save_old_style(QEMUFile *f, SaveStateEntry *se, QJSON *vmdes
 {
     int64_t old_offset, size;
 
+    printf("\n\n\n\nInside savevm.c -> vmstate_save_old_style\n\n\n\n");
     old_offset = qemu_ftell_fast(f);
     se->ops->save_state(f, se->opaque);
     size = qemu_ftell_fast(f) - old_offset;
@@ -712,6 +736,8 @@ static void vmstate_save_old_style(QEMUFile *f, SaveStateEntry *se, QJSON *vmdes
 
 static void vmstate_save(QEMUFile *f, SaveStateEntry *se, QJSON *vmdesc)
 {
+
+    printf("\n\n\n\nInside savevm.c -> vmstate_save\n\n\n\n");
     trace_vmstate_save(se->idstr, se->vmsd ? se->vmsd->name : "(old)");
     if (!se->vmsd) {
         vmstate_save_old_style(f, se, vmdesc);
@@ -734,6 +760,7 @@ static void save_section_header(QEMUFile *f, SaveStateEntry *se,
     qemu_put_byte(f, section_type);
     qemu_put_be32(f, se->section_id);
 
+    printf("\n\n\n\nInside savevm.c -> save_section_header\n\n\n\n");
     if (section_type == QEMU_VM_SECTION_FULL ||
         section_type == QEMU_VM_SECTION_START) {
         /* ID string */
@@ -772,6 +799,8 @@ void qemu_savevm_command_send(QEMUFile *f,
                               uint16_t len,
                               uint8_t *data)
 {
+
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_command_send\n\n\n\n");
     trace_savevm_command_send(command, len);
     qemu_put_byte(f, QEMU_VM_COMMAND);
     qemu_put_be16(f, (uint16_t)command);
@@ -784,6 +813,7 @@ void qemu_savevm_send_ping(QEMUFile *f, uint32_t value)
 {
     uint32_t buf;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_send_ping\n\n\n\n");
     trace_savevm_send_ping(value);
     buf = cpu_to_be32(value);
     qemu_savevm_command_send(f, MIG_CMD_PING, sizeof(value), (uint8_t *)&buf);
@@ -791,6 +821,8 @@ void qemu_savevm_send_ping(QEMUFile *f, uint32_t value)
 
 void qemu_savevm_send_open_return_path(QEMUFile *f)
 {
+
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_send_open_return_path\n\n\n\n");
     trace_savevm_send_open_return_path();
     qemu_savevm_command_send(f, MIG_CMD_OPEN_RETURN_PATH, 0, NULL);
 }
@@ -808,6 +840,7 @@ int qemu_savevm_send_packaged(QEMUFile *f, const uint8_t *buf, size_t len)
 {
     uint32_t tmp;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_send_packaged\n\n\n\n");
     if (len > MAX_VM_CMD_PACKAGED_SIZE) {
         error_report("%s: Unreasonably large packaged state: %zu",
                      __func__, len);
@@ -862,6 +895,7 @@ void qemu_savevm_send_postcopy_ram_discard(QEMUFile *f, const char *name,
     uint16_t t;
     size_t name_len = strlen(name);
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_send_postcopy_ram_discard\n\n\n\n");
     trace_qemu_savevm_send_postcopy_ram_discard(name, len);
     assert(name_len < 256);
     buf = g_malloc0(1 + 1 + name_len + 1 + (8 + 8) * len);
@@ -899,6 +933,7 @@ bool qemu_savevm_state_blocked(Error **errp)
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_blocked\n\n\n\n");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->vmsd && se->vmsd->unmigratable) {
             error_setg(errp, "State blocked by non-migratable device '%s'",
@@ -934,6 +969,7 @@ void qemu_savevm_state_begin(QEMUFile *f,
     SaveStateEntry *se;
     int ret;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_begin\n\n\n\n");
     trace_savevm_state_begin();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->set_params) {
@@ -973,6 +1009,7 @@ int qemu_savevm_state_iterate(QEMUFile *f, bool postcopy)
     SaveStateEntry *se;
     int ret = 1;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_iterate\n\n\n\n");
     trace_savevm_state_iterate();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->save_live_iterate) {
@@ -1036,6 +1073,7 @@ void qemu_savevm_state_complete_postcopy(QEMUFile *f)
     SaveStateEntry *se;
     int ret;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_complete_postcopy\n\n\n\n");
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (!se->ops || !se->ops->save_live_complete_postcopy) {
             continue;
@@ -1071,6 +1109,7 @@ void qemu_savevm_state_complete_precopy(QEMUFile *f, bool iterable_only)
     int ret;
     bool in_postcopy = migration_in_postcopy(migrate_get_current());
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_complete_precopy\n\n\n\n");
     trace_savevm_state_complete_precopy();
 
     cpu_synchronize_all_states();
