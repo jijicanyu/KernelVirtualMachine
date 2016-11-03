@@ -1,3 +1,4 @@
+/qemu/bin/debug/native/xtensaeb-softmmu/qemu-system-xtensaeb
 qemu/bin/
 tamp
 /qemu/**/*.out
