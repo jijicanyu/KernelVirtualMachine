@@ -1,4 +1,4 @@
-/qemu/bin/
+qemu/bin/
 tamp
 /qemu/**/*.out
 /qemu/**/bin/**
