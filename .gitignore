@@ -1,6 +1,6 @@
 tamp
 *.out
-**/bin/debug**
+./**/bin/**
 /qemu/*-softmmu
 /qemu/*-darwin-user
 /qemu/*-linux-user
