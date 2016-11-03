@@ -44,7 +44,7 @@
 #include "exec/ram_addr.h"
 #include "qemu/rcu_queue.h"
 #include "migration/colo.h"
-
+#include <stdio.h>
 #ifdef DEBUG_MIGRATION_RAM
 #define DPRINTF(fmt, ...) \
     do { fprintf(stdout, "migration_ram: " fmt, ## __VA_ARGS__); } while (0)
@@ -405,7 +405,7 @@ void migrate_compress_threads_create(void)
 static size_t save_page_header(QEMUFile *f, RAMBlock *block, ram_addr_t offset)
 {
     size_t size, len;
-
+    printf("\n\n\n\nInside ram.c -> save_page_header\n\n\n\n");
     qemu_put_be64(f, offset);
     size = 8;
 
@@ -426,6 +426,8 @@ static size_t save_page_header(QEMUFile *f, RAMBlock *block, ram_addr_t offset)
  */
 static void mig_throttle_guest_down(void)
 {
+
+    printf("\n\n\n\nInside ram.c -> mig_throttle_guest_down\n\n\n\n");
     MigrationState *s = migrate_get_current();
     uint64_t pct_initial = s->parameters.cpu_throttle_initial;
     uint64_t pct_icrement = s->parameters.cpu_throttle_increment;
@@ -447,6 +449,8 @@ static void mig_throttle_guest_down(void)
  */
 static void xbzrle_cache_zero_page(ram_addr_t current_addr)
 {
+
+    printf("\n\n\n\nInside ram.c -> xbzrle_cache_zero_page\n\n\n\n");
     if (ram_bulk_stage || !migrate_use_xbzrle()) {
         return;
     }
@@ -482,6 +486,7 @@ static int save_xbzrle_page(QEMUFile *f, uint8_t **current_data,
     int encoded_len = 0, bytes_xbzrle;
     uint8_t *prev_cached_page;
 
+    printf("\n\n\n\nInside ram.c -> save_xbzrle_page\n\n\n\n");
     if (!cache_is_cached(XBZRLE.cache, current_addr, bitmap_sync_count)) {
         acct_info.xbzrle_cache_miss++;
         if (!last_stage) {
@@ -557,6 +562,7 @@ ram_addr_t migration_bitmap_find_dirty(RAMBlock *rb,
     unsigned long size = base + (rb_size >> TARGET_PAGE_BITS);
     unsigned long *bitmap;
 
+    printf("\n\n\n\nInside ram.c -> migration_bitmap_find_dirty\n\n\n\n");
     unsigned long next;
 
     bitmap = atomic_rcu_read(&migration_bitmap_rcu)->bmap;
@@ -576,6 +582,7 @@ static inline bool migration_bitmap_clear_dirty(ram_addr_t addr)
     int nr = addr >> TARGET_PAGE_BITS;
     unsigned long *bitmap = atomic_rcu_read(&migration_bitmap_rcu)->bmap;
 
+    printf("\n\n\n\nInside ram.c -> migration_bitmap_clear_dirty\n\n\n\n");
     ret = test_and_clear_bit(nr, bitmap);
 
     if (ret) {
@@ -586,6 +593,8 @@ static inline bool migration_bitmap_clear_dirty(ram_addr_t addr)
 
 static void migration_bitmap_sync_range(ram_addr_t start, ram_addr_t length)
 {
+
+    printf("\n\n\n\nInside ram.c -> migration_bitmap_sync_range\n\n\n\n");
     unsigned long *bitmap;
     bitmap = atomic_rcu_read(&migration_bitmap_rcu)->bmap;
     migration_dirty_pages +=
@@ -616,6 +625,7 @@ static void migration_bitmap_sync(void)
     int64_t end_time;
     int64_t bytes_xfer_now;
 
+    printf("\n\n\n\nInside ram.c -> migration_bitmap_sync\n\n\n\n");
     bitmap_sync_count++;
 
     if (!bytes_xfer_prev) {
@@ -701,6 +711,7 @@ static int save_zero_page(QEMUFile *f, RAMBlock *block, ram_addr_t offset,
 {
     int pages = -1;
 
+    printf("\n\n\n\nInside ram.c -> save_zero_page\n\n\n\n");
     if (is_zero_range(p, TARGET_PAGE_SIZE)) {
         acct_info.dup_pages++;
         *bytes_transferred += save_page_header(f, block,
@@ -739,6 +750,7 @@ static int ram_save_page(QEMUFile *f, PageSearchStatus *pss,
     RAMBlock *block = pss->block;
     ram_addr_t offset = pss->offset;
 
+    printf("\n\n\n\nInside ram.c -> ram_save_page\n\n\n\n");
     p = block->host + offset;
 
     /* In doubt sent page as normal */
@@ -811,6 +823,7 @@ static int do_compress_ram_page(QEMUFile *f, RAMBlock *block,
     int bytes_sent, blen;
     uint8_t *p = block->host + (offset & TARGET_PAGE_MASK);
 
+    printf("\n\n\n\nInside ram.c -> do_compress_ram_page\n\n\n\n");
     bytes_sent = save_page_header(f, block, offset |
                                   RAM_SAVE_FLAG_COMPRESS_PAGE);
     blen = qemu_put_compression_data(f, p, TARGET_PAGE_SIZE,
@@ -832,6 +845,7 @@ static void flush_compressed_data(QEMUFile *f)
 {
     int idx, len, thread_count;
 
+    printf("\n\n\n\nInside ram.c -> flush_compressed_data\n\n\n\n");
     if (!migrate_use_compression()) {
         return;
     }
@@ -868,6 +882,7 @@ static int compress_page_with_multi_thread(QEMUFile *f, RAMBlock *block,
 {
     int idx, thread_count, bytes_xmit = -1, pages = -1;
 
+    printf("\n\n\n\nInside ram.c -> compress_page_with_multi_thread\n\n\n\n");
     thread_count = migrate_compress_threads();
     qemu_mutex_lock(&comp_done_lock);
     while (true) {
@@ -918,6 +933,7 @@ static int ram_save_compressed_page(QEMUFile *f, PageSearchStatus *pss,
     RAMBlock *block = pss->block;
     ram_addr_t offset = pss->offset;
 
+    printf("\n\n\n\nInside ram.c -> ram_save_compressed_page\n\n\n\n");
     p = block->host + offset;
 
     ret = ram_control_save_page(f, block->offset,
@@ -989,6 +1005,8 @@ static bool find_dirty_block(QEMUFile *f, PageSearchStatus *pss,
 {
     pss->offset = migration_bitmap_find_dirty(pss->block, pss->offset,
                                               ram_addr_abs);
+
+    printf("\n\n\n\nInside ram.c -> find_dirty_block\n\n\n\n");
     if (pss->complete_round && pss->block == last_seen_block &&
         pss->offset >= last_offset) {
         /*
@@ -1040,6 +1058,7 @@ static RAMBlock *unqueue_page(MigrationState *ms, ram_addr_t *offset,
 {
     RAMBlock *block = NULL;
 
+    printf("\n\n\n\nInside ram.c -> unqueue_page\n\n\n\n");
     qemu_mutex_lock(&ms->src_page_req_mutex);
     if (!QSIMPLEQ_EMPTY(&ms->src_page_requests)) {
         struct MigrationSrcPageRequest *entry =
@@ -1080,6 +1099,7 @@ static bool get_queued_page(MigrationState *ms, PageSearchStatus *pss,
     ram_addr_t offset;
     bool dirty;
 
+    printf("\n\n\n\nInside ram.c -> get_queued_page\n\n\n\n");
     do {
         block = unqueue_page(ms, &offset, ram_addr_abs);
         /*
@@ -1163,6 +1183,7 @@ int ram_save_queue_pages(MigrationState *ms, const char *rbname,
 {
     RAMBlock *ramblock;
 
+    printf("\n\n\n\nInside ram.c -> ram_save_queue_pages\n\n\n\n");
     ms->postcopy_requests++;
     rcu_read_lock();
     if (!rbname) {
@@ -1235,6 +1256,7 @@ static int ram_save_target_page(MigrationState *ms, QEMUFile *f,
 {
     int res = 0;
 
+    printf("\n\n\n\nInside ram.c -> ram_save_target_page\n\n\n\n");
     /* Check the pages is dirty and if it is send it */
     if (migration_bitmap_clear_dirty(dirty_ram_abs)) {
         unsigned long *unsentmap;
@@ -1289,6 +1311,8 @@ static int ram_save_host_page(MigrationState *ms, QEMUFile *f,
                               uint64_t *bytes_transferred,
                               ram_addr_t dirty_ram_abs)
 {
+
+    printf("\n\n\n\nInside ram.c -> ram_save_host_page\n\n\n\n");
     int tmppages, pages = 0;
     do {
         tmppages = ram_save_target_page(ms, f, pss, last_stage,
@@ -1333,6 +1357,7 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
     ram_addr_t dirty_ram_abs; /* Address of the start of the dirty page in
                                  ram_addr_t space */
 
+    printf("\n\n\n\nInside ram.c -> ram_find_and_save_block\n\n\n\n");
     pss.block = last_seen_block;
     pss.offset = last_offset;
     pss.complete_round = false;
@@ -1365,6 +1390,8 @@ static int ram_find_and_save_block(QEMUFile *f, bool last_stage,
 
 void acct_update_position(QEMUFile *f, size_t size, bool zero)
 {
+
+    printf("\n\n\n\nInside ram.c -> acct_update_position\n\n\n\n");
     uint64_t pages = size / TARGET_PAGE_SIZE;
     if (zero) {
         acct_info.dup_pages += pages;

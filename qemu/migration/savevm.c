@@ -1200,6 +1200,7 @@ void qemu_savevm_state_pending(QEMUFile *f, uint64_t max_size,
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_pending\n\n\n\n");
     *res_non_postcopiable = 0;
     *res_postcopiable = 0;
 
@@ -1222,6 +1223,7 @@ void qemu_savevm_state_cleanup(void)
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state_cleanup\n\n\n\n");
     trace_savevm_state_cleanup();
     QTAILQ_FOREACH(se, &savevm_state.handlers, entry) {
         if (se->ops && se->ops->cleanup) {
@@ -1241,6 +1243,7 @@ static int qemu_savevm_state(QEMUFile *f, Error **errp)
     MigrationStatus status;
     ms->to_dst_file = f;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_savevm_state\n\n\n\n");
     if (migration_is_blocked(errp)) {
         ret = -EINVAL;
         goto done;
@@ -1281,6 +1284,7 @@ static int qemu_save_device_state(QEMUFile *f)
 {
     SaveStateEntry *se;
 
+    printf("\n\n\n\nInside savevm.c -> qemu_save_device_state\n\n\n\n");
     qemu_put_be32(f, QEMU_VM_FILE_MAGIC);
     qemu_put_be32(f, QEMU_VM_FILE_VERSION);
 
